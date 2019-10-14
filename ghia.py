@@ -1,3 +1,5 @@
+from collections import deque
+from itertools import chain
 import configparser
 import re
 
@@ -6,6 +8,92 @@ import requests
 
 
 valid_reposlug = re.compile('^[^/]+/[^/]+$')
+next_link = re.compile('<([^>]*)>; ?rel=.next')
+
+
+class IssuesIterator:
+    def __init__(self, repo, session):
+        self.session = session
+        self.next = repo['issues_url'].format_map({'/number': ''})
+        self.parsed = deque()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if not self.parsed:
+            if not self.next:
+                raise StopIteration
+
+            r = self.session.get(self.next)
+            self.parsed = deque(r.json())
+            nexts = None
+            if 'Link' in r.headers:
+                nexts = next_link.findall(r.headers['Link'])
+
+            if not nexts:
+                next = None
+            else:
+                next = nexts[0]
+            self.next = next
+
+        return self.parsed.popleft()
+
+
+def get_issues(repo, session):
+    return IssuesIterator(repo, session)
+
+
+def get_labels(issue):
+    return map(lambda label: label['name'], issue['labels'])
+
+
+def issue_new_assignment(issue, config):
+    users = set()
+
+    # Assign according to title
+    for user in config['rules']:
+        for regex in chain(user['rules']['title'], user['rules']['any']):
+            if regex.search(issue['title']):
+                users.add(user['name'])
+                break
+
+    # Assign according to text
+    for user in config['rules']:
+        for regex in chain(user['rules']['text'], user['rules']['any']):
+            if regex.search(issue['body']):
+                users.add(user['name'])
+                break
+
+    # Assign according to labels
+    for label in get_labels(issue):
+        for user in config['rules']:
+            for regex in chain(user['rules']['label'], user['rules']['any']):
+                if regex.search(label):
+                    users.add(user['name'])
+                    break
+
+    return users
+
+
+def issue_current_assignment(issue):
+    return set(map(lambda assignee: assignee['login'], issue['assignees']))
+
+
+def session_init(token):
+    session = requests.Session()
+    session.headers['Authorization'] = f'token {token}'
+    session.headers['Accept'] = 'application/vnd.github.v3+json'
+
+    return session
+
+
+def get_repo(session, reposlug):
+    r = session.get(f'https://api.github.com/repos/{reposlug}')
+    if r.status_code != 200:
+        raise IOError
+
+    return r.json()
 
 
 def validate_reposlug(ctx, param, value):
@@ -31,6 +119,7 @@ def parse_auth(ctx, param, value):
 def parse_rules(ctx, param, value):
     error_text = 'incorrect configuration format'
     rules = configparser.ConfigParser()
+    rules.optionxform=str
     try:
         rules.read_file(value)
     except:
@@ -64,7 +153,7 @@ def parse_rules(ctx, param, value):
         lines = map(
             lambda line: line.split(':', 1), filter(
                 lambda line: line != '',
-                rules['patterns'][name.lower()].split('\n')
+                rules['patterns'][name].split('\n')
         ))
 
         for line in lines:
