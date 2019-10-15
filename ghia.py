@@ -172,6 +172,92 @@ def parse_rules(ctx, param, value):
     return {'fallback': fallback, 'rules': parsed_rules}
 
 
+def add_label(session, issue, label):
+    r = session.post(f"{issue['url']}/labels", json={'labels': [label]})
+
+    if r.status_code != 200:
+        raise Exception
+
+
+def set_asignees(session, issue, add, remove):
+    if add['assignees']:
+        r = session.post(f"{issue['url']}/assignees", json=add)
+        if r.status_code != 201:
+            raise Exception
+
+    if remove['assignees']:
+        r = session.delete(f"{issue['url']}/assignees", json=remove)
+        if r.status_code != 200:
+            raise Exception
+
+
+def print_diff(new, old):
+    for user in sorted(new | old, key=str.casefold):
+        if user not in new:
+            click.echo(f'   {click.style("-", bold=True, fg="red")} {user}')
+
+        elif user not in old:
+            click.echo(f'   {click.style("+", bold=True, fg="green")} {user}')
+
+        else:
+            click.echo(f'   {click.style("=", bold=True, fg="blue")} {user}')
+
+
+def assign_to_issue(session, issue, reposlug, strategy, config_rules, dry_run):
+    number = issue['number']
+    html_url = issue['html_url']
+
+    click.echo(
+        f"-> {click.style(f'{reposlug}#{number}', bold=True)} ({html_url})"
+    )
+
+    old = issue_current_assignment(issue)
+    new = issue_new_assignment(issue, config_rules)
+
+    if old and strategy == 'set':
+        print_diff(old, old)
+        return
+
+    if strategy == 'append':
+        new |= old
+
+    if not new and config_rules["fallback"]:
+        if config_rules['fallback'] in get_labels(issue):
+            click.echo('   ', nl=False)
+            click.secho('FALLBACK', bold=True, fg='yellow', nl=False)
+            click.echo(f': already has label "{config_rules["fallback"]}"')
+
+        else:
+            if not dry_run:
+                try:
+                    add_label(session, issue, config_rules["fallback"])
+                except:
+                    click.echo('   ', nl=False, err=True)
+                    click.secho('ERROR', fg='red', bold=True, nl=False,
+                        err=True)
+                    click.echo(f': Could not update issue {reposlug}#{number}',
+                        err=True)
+                    return
+
+            click.echo('   ', nl=False)
+            click.secho('FALLBACK', bold=True, fg='yellow', nl=False)
+            click.echo(f': added label "{config_rules["fallback"]}"')
+
+    add = {'assignees': list(new - old)}
+    remove = {'assignees': list(old - new)}
+    try:
+        if not dry_run:
+            set_asignees(session, issue, add, remove)
+
+    except:
+        click.echo('   ', nl=False, err=True)
+        click.secho('ERROR', fg='red', bold=True, nl=False, err=True)
+        click.echo(f': Could not update issue {reposlug}#{number}', err=True)
+        return
+
+    print_diff(new, old)
+
+
 @click.command()
 @click.option('-s', '--strategy',
     type=click.Choice(['append', 'set', 'change']), default='append',
@@ -185,7 +271,20 @@ def parse_rules(ctx, param, value):
 @click.argument('reposlug', callback=validate_reposlug)
 def run(strategy, dry_run, config_auth, config_rules, reposlug):
     """CLI tool for automatic issue assigning of GitHub issues"""
-    pass
+
+    session = session_init(config_auth)
+
+    try:
+        repo = get_repo(session, reposlug)
+    except IOError:
+        click.secho('ERROR', fg='red', bold=True, nl=False, err=True)
+        click.echo(f': Could not list issues for repository {reposlug}',
+            err=True)
+        exit(10)
+
+    for issue in get_issues(repo, session):
+        assign_to_issue(session, issue, reposlug, strategy, config_rules, dry_run)
+
 
 if __name__ == '__main__':
     run()
