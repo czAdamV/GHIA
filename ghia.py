@@ -27,15 +27,7 @@ class IssuesIterator:
 
             r = self.session.get(self.next)
             self.parsed = deque(r.json())
-            nexts = None
-            if 'Link' in r.headers:
-                nexts = next_link.findall(r.headers['Link'])
-
-            if not nexts:
-                next = None
-            else:
-                next = nexts[0]
-            self.next = next
+            self.next = r.links['next']['url'] if 'next' in r.links else None
 
         return self.parsed.popleft()
 
