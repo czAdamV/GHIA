@@ -11,10 +11,14 @@ valid_reposlug = re.compile('^[^/]+/[^/]+$')
 next_link = re.compile('<([^>]*)>; ?rel=.next')
 
 
+class IssuesListException(Exception):
+    pass
+
+
 class IssuesIterator:
-    def __init__(self, repo, session):
+    def __init__(self, reposlug, session):
         self.session = session
-        self.next = repo['issues_url'].format_map({'/number': ''})
+        self.next = f'https://api.github.com/repos/{reposlug}/issues'
         self.parsed = deque()
 
     def __iter__(self):
@@ -26,14 +30,16 @@ class IssuesIterator:
                 raise StopIteration
 
             r = self.session.get(self.next)
+            if r.status_code != 200:
+                raise IssuesListException
             self.parsed = deque(r.json())
             self.next = r.links['next']['url'] if 'next' in r.links else None
 
         return self.parsed.popleft()
 
 
-def get_issues(repo, session):
-    return IssuesIterator(repo, session)
+def get_issues(reposlug, session):
+    return IssuesIterator(reposlug, session)
 
 
 def get_labels(issue):
@@ -78,14 +84,6 @@ def session_init(token):
     session.headers['Accept'] = 'application/vnd.github.v3+json'
 
     return session
-
-
-def get_repo(session, reposlug):
-    r = session.get(f'https://api.github.com/repos/{reposlug}')
-    if r.status_code != 200:
-        raise IOError
-
-    return r.json()
 
 
 def validate_reposlug(ctx, param, value):
@@ -267,15 +265,14 @@ def run(strategy, dry_run, config_auth, config_rules, reposlug):
     session = session_init(config_auth)
 
     try:
-        repo = get_repo(session, reposlug)
-    except IOError:
+        for issue in get_issues(reposlug, session):
+            assign_to_issue(session, issue, reposlug, strategy, config_rules,
+                dry_run)
+    except IssuesListException as e:
         click.secho('ERROR', fg='red', bold=True, nl=False, err=True)
         click.echo(f': Could not list issues for repository {reposlug}',
             err=True)
         exit(10)
-
-    for issue in get_issues(repo, session):
-        assign_to_issue(session, issue, reposlug, strategy, config_rules, dry_run)
 
 
 if __name__ == '__main__':
