@@ -91,38 +91,32 @@ def validate_reposlug(ctx, param, value):
     return value
 
 
+def parse_auth_configparse(auth):
+    if not 'github' in auth or not 'token' in auth['github']:
+        raise Exception
+
+    return {'token': auth['github']['token']}
+
+
 def parse_auth(ctx, param, value):
     error_text = 'incorrect configuration format'
     auth = configparser.ConfigParser()
     try:
         auth.read_file(value)
+        return parse_auth_configparse(auth)
     except:
         raise click.BadParameter(error_text)
 
-    if not 'github' in auth or not 'token' in auth['github']:
-        raise click.BadParameter(error_text)
-
-    return {'token': auth['github']['token']}
 
 
-def parse_rules(ctx, param, value):
-    error_text = 'incorrect configuration format'
-    rules = configparser.ConfigParser()
-    rules.optionxform=str
-    try:
-        rules.read_file(value)
-    except:
-        raise click.BadParameter(error_text)
-
-    rules.read_file(value)
-
+def parse_rules_configparse(rules):
     if not 'patterns' in rules:
-        raise click.BadParameter(error_text)
+        raise Exception
 
     fallback = None
     if 'fallback' in rules:
         if not 'label' in rules['fallback']:
-            raise click.BadParameter(error_text)
+            raise Exception
 
         fallback = rules['fallback']['label']
 
@@ -147,18 +141,29 @@ def parse_rules(ctx, param, value):
 
         for line in lines:
             if not line[0] in parsed_rule['rules']:
-                raise click.BadParameter(error_text)
+                raise Exception
 
             try:
                 regex = re.compile(line[1], flags=re.IGNORECASE)
             except:
-                raise click.BadParameter(error_text)
+                raise Exception
 
             parsed_rule['rules'][line[0]].append(regex)
 
         parsed_rules.append(parsed_rule)
 
     return {'fallback': fallback, 'rules': parsed_rules}
+
+
+def parse_rules(ctx, param, value):
+    error_text = 'incorrect configuration format'
+    rules = configparser.ConfigParser()
+    rules.optionxform=str
+    try:
+        rules.read_file(value)
+        return parse_rules_configparse(rules)
+    except:
+        raise click.BadParameter(error_text)
 
 
 def add_label(session, issue, label):
