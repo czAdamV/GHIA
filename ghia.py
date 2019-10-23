@@ -8,7 +8,6 @@ import requests
 
 
 valid_reposlug = re.compile('^[^/]+/[^/]+$')
-next_link = re.compile('<([^>]*)>; ?rel=.next')
 
 
 class IssuesListException(Exception):
