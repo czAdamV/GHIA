@@ -209,6 +209,9 @@ def print_diff(new, old):
 
 
 def assign_to_issue(session, issue, reposlug, strategy, config_rules, dry_run):
+    if issue['state'] != 'open':
+        return
+
     number = issue['number']
     html_url = issue['html_url']
 
