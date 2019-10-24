@@ -102,7 +102,7 @@ def parse_auth(ctx, param, value):
     if not 'github' in auth or not 'token' in auth['github']:
         raise click.BadParameter(error_text)
 
-    return auth['github']['token']
+    return {'token': auth['github']['token']}
 
 
 def parse_rules(ctx, param, value):
@@ -261,7 +261,7 @@ def assign_to_issue(session, issue, reposlug, strategy, config_rules, dry_run):
 def run(strategy, dry_run, config_auth, config_rules, reposlug):
     """CLI tool for automatic issue assigning of GitHub issues"""
 
-    session = session_init(config_auth)
+    session = session_init(config_auth['token'])
 
     try:
         for issue in get_issues(reposlug, session):
