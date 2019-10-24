@@ -10,6 +10,9 @@ import requests
 valid_reposlug = re.compile('^[^/]+/[^/]+$')
 
 
+valid_types = ['title', 'text', 'label', 'any']
+
+
 class IssuesListException(Exception):
     pass
 
@@ -124,12 +127,7 @@ def parse_rules_configparse(rules):
     for name in rules['patterns']:
         parsed_rule = {
             'name': name,
-            'rules': {
-                'title': [],
-                'text': [],
-                'label': [],
-                'any': [],
-            }
+            'rules': {type: [] for type in valid_types}
         }
 
         # Filter out empty lines and split the rest to tag and pattern
