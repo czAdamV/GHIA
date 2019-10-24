@@ -1,7 +1,9 @@
-from flask import Flask, current_app, request, render_template
+from flask import Flask, current_app, request, render_template, abort
 from collections import deque
 from itertools import chain
 import configparser
+import hashlib
+import hmac
 import os
 import re
 
@@ -105,7 +107,11 @@ def parse_auth_configparse(auth):
     if not 'github' in auth or not 'token' in auth['github']:
         raise Exception
 
-    return {'token': auth['github']['token']}
+    return {
+        'token': auth['github']['token'],
+        'secret':
+            auth['github']['secret'] if 'secret' in auth['github'] else None
+    }
 
 
 def parse_auth(ctx, param, value):
@@ -301,6 +307,7 @@ def initialize_flask_app():
     app.config['user'] = user
     app.config['rules'] = rules
     app.config['session'] = session
+    app.config['secret'] = auth['secret']
 
 
 if __name__ == '__main__':
@@ -319,6 +326,33 @@ def root():
             valid_types=valid_types
         )
 
-    # todo answer the webhook
+    if app.config['secret']:
+        if not "X-Hub-Signature" in request.headers:
+            abort(400)
 
-    return 'meow'
+        signature = request.headers['X-Hub-Signature']
+
+        hmac_gen = hmac.new(app.config['secret'].encode(), request.data,
+            hashlib.sha1)
+        digest = "sha1=" + hmac_gen.hexdigest()
+
+        # Using compare_digest because using `==` would
+        # make the app vulnerable to timing attacks.
+        if not hmac.compare_digest(signature, digest):
+            abort(400)
+
+    body = request.get_json()
+
+    if not 'issue' in body:
+        return ''
+
+    assign_to_issue(
+        app.config['session'],
+        body['issue'],
+        body['repository']['full_name'],
+        'append',
+        current_app.config['rules'],
+        False
+    )
+
+    return f"{body['issue']['url']}\n{body['repository']['full_name']}\n"
