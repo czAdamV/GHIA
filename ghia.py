@@ -1,6 +1,8 @@
+from flask import Flask, current_app, request, render_template
 from collections import deque
 from itertools import chain
 import configparser
+import os
 import re
 
 import click
@@ -42,6 +44,11 @@ class IssuesIterator:
 
 def get_issues(reposlug, session):
     return IssuesIterator(reposlug, session)
+
+
+def get_user(session):
+    r = session.get('https://api.github.com/user')
+    return r.json()
 
 
 def get_labels(issue):
@@ -277,5 +284,41 @@ def run(strategy, dry_run, config_auth, config_rules, reposlug):
         exit(10)
 
 
+app = Flask(__name__)
+
+
+def initialize_flask_app():
+    conf = configparser.ConfigParser()
+    conf.optionxform=str
+    conf.read(os.environ['GHIA_CONFIG'].split(':'))
+
+    rules = parse_rules_configparse(conf)
+    auth = parse_auth_configparse(conf)
+
+    session = session_init(auth['token'])
+    user = get_user(session)
+
+    app.config['user'] = user
+    app.config['rules'] = rules
+    app.config['session'] = session
+
+
 if __name__ == '__main__':
     run()
+else:
+    initialize_flask_app()
+
+
+@app.route('/', methods=['GET', 'POST'])
+def root():
+    if request.method == 'GET':
+        return render_template(
+            'index.html',
+            username=current_app.config['user']['login'],
+            rules=current_app.config['rules'],
+            valid_types=valid_types
+        )
+
+    # todo answer the webhook
+
+    return 'meow'

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>GHIA status panel</title>
+</head>
+<body>
+    <h1>GHIA status panel</h1>
+    <h2>Effective user</h2>
+    <p>
+        <span style="font-family: monospace;">{{ username }}</span>
+    </p>
+
+    {% if not rules['fallback'] %}
+        <h2>Fallback label not set</h2>
+    {% else %}
+        <h2>Fallback label</h2>
+        <p>
+            <span style="font-family: monospace;">{{ rules['fallback'] }}</span>
+        </p>
+    {% endif %}
+
+    <h2>Rules:</h2>
+    <ul>
+        {% for rule in rules['rules'] %}
+            <li>{{ rule['name'] }}
+            {% for type in valid_types if rule['rules'][type] %}
+                <ul>
+                    <li>{{ type }}
+                    {% for regex in rule['rules'][type] %}
+                        <ul><li><span style="font-family: monospace;">
+                            {{ regex.pattern }}
+                        </span></ul>
+                    {% endfor %}
+                </ul>
+            {% endfor %}
+        {% endfor %}
+    </ul>
+</body>
+</html>
