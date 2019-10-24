@@ -1,4 +1,4 @@
-from flask import Flask, current_app, request, render_template, abort
+from flask import Flask, current_app, request, render_template
 from collections import deque
 from itertools import chain
 import configparser
@@ -329,9 +329,12 @@ def root():
             valid_types=valid_types
         )
 
+    if not 'X-GitHub-Event' in request.headers:
+        return 'X-GitHub-Event header missing', 400
+
     if app.config['secret']:
         if not "X-Hub-Signature" in request.headers:
-            abort(400)
+            return 'missing signature', 400
 
         signature = request.headers['X-Hub-Signature']
 
@@ -342,12 +345,15 @@ def root():
         # Using compare_digest because using `==` would
         # make the app vulnerable to timing attacks.
         if not hmac.compare_digest(signature, digest):
-            abort(400)
+            return 'invalid signature', 400
+
+    if request.headers['X-GitHub-Event'] == 'ping':
+        return ''
+
+    if request.headers['X-GitHub-Event'] != 'issues':
+        return 'unsupported event type', 400
 
     body = request.get_json()
-
-    if not 'issue' in body:
-        return ''
 
     assign_to_issue(
         app.config['session'],
