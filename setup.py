@@ -7,7 +7,7 @@ with open('README.md') as f:
 
 setup(
     name='ghia_volekada',
-    version='0.3',
+    version='0.6',
     description='GitHub issues assignment tool',
     long_description=long_description,
     author='Adam Volek',
