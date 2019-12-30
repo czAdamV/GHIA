@@ -81,12 +81,19 @@ def parse_rules(ctx, param, value):
 
 
 def print_diff(new, old):
+    output = ""
+
     for user in sorted(new | old, key=str.casefold):
         if user not in new:
-            click.echo(f'   {click.style("-", bold=True, fg="red")} {user}')
+            output += f'   {click.style("-", bold=True, fg="red")} {user}\n'
+            #click.echo(f'   {click.style("-", bold=True, fg="red")} {user}')
 
         elif user not in old:
-            click.echo(f'   {click.style("+", bold=True, fg="green")} {user}')
+            output += f'   {click.style("+", bold=True, fg="green")} {user}\n'
+            #click.echo(f'   {click.style("+", bold=True, fg="green")} {user}')
 
         else:
-            click.echo(f'   {click.style("=", bold=True, fg="blue")} {user}')
+            output += f'   {click.style("=", bold=True, fg="blue")} {user}\n'
+            #click.echo(f'   {click.style("=", bold=True, fg="blue")} {user}')
+
+    return output

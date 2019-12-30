@@ -17,7 +17,8 @@ setup(
     url='https://github.com/czAdamV/GHIA',
     packages=find_packages(),
     package_data={'ghia': ['templates/*.html']},
-    install_requires=['Flask', 'click', 'requests'],
+    python_requires=">=3.7",
+    install_requires=['Flask', 'click', 'requests', 'asyncio', 'aiohttp'],
     entry_points={
         'console_scripts': [
             'ghia = ghia:main',

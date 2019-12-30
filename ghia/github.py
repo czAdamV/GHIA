@@ -3,7 +3,9 @@ from .helpers import print_diff
 
 from collections import deque
 from itertools import chain
+import contextlib
 import requests
+import aiohttp
 import click
 
 
@@ -20,6 +22,9 @@ class IssuesIterator:
     def __iter__(self):
         return self
 
+    def __aiter__(self):
+        return self
+
     def __next__(self):
         if not self.parsed:
             if not self.next:
@@ -33,8 +38,25 @@ class IssuesIterator:
 
         return self.parsed.popleft()
 
+    async def __anext__(self):
+        if not self.parsed:
+            if not self.next:
+                raise StopAsyncIteration
+
+            r = await self.session.get(self.next)
+            if r.status != 200:
+                raise IssuesListException
+            self.parsed = deque(await r.json())
+            self.next = r.links['next']['url'] if 'next' in r.links else None
+
+        return self.parsed.popleft()
+
 
 def get_issues(reposlug, session):
+    return IssuesIterator(reposlug, session)
+
+
+def get_issues_async(reposlug, session):
     return IssuesIterator(reposlug, session)
 
 
@@ -87,6 +109,16 @@ def session_init(token):
     return session
 
 
+@contextlib.asynccontextmanager
+async def session_init_aiohttp(token):
+    headers = {
+        'Authorization': f'token {token}',
+        'Accept': 'application/vnd.github.v3+json'
+    }
+    async with aiohttp.ClientSession(headers=headers) as session:
+        yield session
+
+
 def add_label(session, issue, label):
     r = session.post(f"{issue['url']}/labels", json={'labels': [label]})
 
@@ -113,15 +145,20 @@ def assign_to_issue(session, issue, reposlug, strategy, config_rules, dry_run):
     number = issue['number']
     html_url = issue['html_url']
 
-    click.echo(
-        f"-> {click.style(f'{reposlug}#{number}', bold=True)} ({html_url})"
-    )
+    output = ""
+    error = ""
+
+    output += f"-> {click.style(f'{reposlug}#{number}', bold=True)} ({html_url})\n"
 
     old = issue_current_assignment(issue)
     new = issue_new_assignment(issue, config_rules)
 
     if old and strategy == 'set':
-        print_diff(old, old)
+        output += print_diff(old, old)
+
+        if output: click.echo(output, nl=False)
+        if error: click.echo(error, err=True, nl=False)
+
         return
 
     if strategy == 'append':
@@ -129,25 +166,27 @@ def assign_to_issue(session, issue, reposlug, strategy, config_rules, dry_run):
 
     if not new and config_rules["fallback"]:
         if config_rules['fallback'] in get_labels(issue):
-            click.echo('   ', nl=False)
-            click.secho('FALLBACK', bold=True, fg='yellow', nl=False)
-            click.echo(f': already has label "{config_rules["fallback"]}"')
+            output += '   '
+            output += click.style('FALLBACK', bold=True, fg='yellow')
+            output += f': already has label "{config_rules["fallback"]}"\n'
 
         else:
             if not dry_run:
                 try:
                     add_label(session, issue, config_rules["fallback"])
                 except:
-                    click.echo('   ', nl=False, err=True)
-                    click.secho('ERROR', fg='red', bold=True, nl=False,
-                        err=True)
-                    click.echo(f': Could not update issue {reposlug}#{number}',
-                        err=True)
+                    error += '   '
+                    error += click.style('ERROR', bold=True, fg='red')
+                    error += f': Could not update issue {reposlug}#{number}\n'
+
+                    if output: click.echo(output, nl=False)
+                    if error: click.echo(error, err=True, nl=False)
+
                     return
 
-            click.echo('   ', nl=False)
-            click.secho('FALLBACK', bold=True, fg='yellow', nl=False)
-            click.echo(f': added label "{config_rules["fallback"]}"')
+            output += '   '
+            output += click.style('FALLBACK', bold=True, fg='yellow')
+            output += f': added label "{config_rules["fallback"]}"\n'
 
     add = {'assignees': list(new - old)}
     remove = {'assignees': list(old - new)}
@@ -156,9 +195,16 @@ def assign_to_issue(session, issue, reposlug, strategy, config_rules, dry_run):
             set_asignees(session, issue, add, remove)
 
     except:
-        click.echo('   ', nl=False, err=True)
-        click.secho('ERROR', fg='red', bold=True, nl=False, err=True)
-        click.echo(f': Could not update issue {reposlug}#{number}', err=True)
+        error += '   '
+        error += click.style('ERROR', bold=True, fg='red')
+        error += f': Could not update issue {reposlug}#{number}\n'
+
+        if output: click.echo(output, nl=False)
+        if error: click.echo(error, err=True, nl=False)
+
         return
 
-    print_diff(new, old)
+    output += print_diff(new, old)
+
+    if output: click.echo(output, nl=False)
+    if error: click.echo(error, err=True, nl=False)
