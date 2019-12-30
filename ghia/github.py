@@ -17,6 +17,7 @@ class IssuesIterator:
     def __init__(self, reposlug, session):
         self.session = session
         self.next = f'https://api.github.com/repos/{reposlug}/issues'
+        self.next_promise = None
         self.parsed = deque()
 
     def __iter__(self):
@@ -43,11 +44,19 @@ class IssuesIterator:
             if not self.next:
                 raise StopAsyncIteration
 
-            r = await self.session.get(self.next)
+            if not self.next_promise:
+                self.next_promise = self.session.get(self.next)
+
+            r = await self.next_promise
             if r.status != 200:
                 raise IssuesListException
-            self.parsed = deque(await r.json())
+
             self.next = r.links['next']['url'] if 'next' in r.links else None
+
+            if self.next:
+                self.next_promise = self.session.get(self.next)
+
+            self.parsed = deque(await r.json())
 
         return self.parsed.popleft()
 
